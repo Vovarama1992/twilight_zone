@@ -32,6 +32,27 @@ BLOCKED_TITLE_TERMS = {
     "từ điển",
 }
 
+QUERY_STOPWORDS = {
+    "and",
+    "or",
+    "the",
+    "with",
+    "for",
+    "to",
+    "in",
+    "of",
+    "on",
+    "latest",
+    "recent",
+    "advanced",
+    "strong",
+    "small",
+    "unusual",
+    "rigorous",
+    "experimental",
+    "2026",
+}
+
 
 class SearchProvider(Protocol):
     def search(self, queries: Iterable[str], limit_per_query: int = 3) -> List[Dict[str, str]]:
@@ -210,7 +231,7 @@ class ArxivSearchProvider:
         for query in list(queries):
             url = "https://export.arxiv.org/api/query?" + urllib.parse.urlencode(
                 {
-                    "search_query": f"all:{query}",
+                    "search_query": _arxiv_search_query(query),
                     "start": 0,
                     "max_results": limit_per_query,
                     "sortBy": "submittedDate",
@@ -242,6 +263,18 @@ def _parse_arxiv_results(xml: str) -> List[Dict[str, str]]:
         if title and url:
             items.append({"title": title, "url": url, "source": "arxiv", "snippet": summary})
     return items
+
+
+def _arxiv_search_query(query: str) -> str:
+    tokens = [
+        token.lower()
+        for token in re.findall(r"[A-Za-z][A-Za-z0-9-]{2,}", query)
+        if token.lower() not in QUERY_STOPWORDS
+    ]
+    if not tokens:
+        return f'all:"{query}"'
+    selected = tokens[:5]
+    return " AND ".join(f"all:{token}" for token in selected)
 
 
 def _clean_xml_text(value: str) -> str:

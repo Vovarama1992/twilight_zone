@@ -9,6 +9,7 @@ from twilight_zone.llm import NullLLMProvider
 from twilight_zone.search import (
     OfflineSearchProvider,
     _DuckDuckGoHTMLParser,
+    _arxiv_search_query,
     _normalize_bing_url,
     _parse_arxiv_results,
     _parse_bing_results,
@@ -167,6 +168,10 @@ class ConfigTests(unittest.TestCase):
         results = _parse_arxiv_results(xml)
         self.assertEqual(results[0]["title"], "A paper about agents")
         self.assertEqual(results[0]["url"], "https://arxiv.org/abs/1234.5678")
+
+    def test_arxiv_query_uses_key_terms_with_and(self):
+        query = _arxiv_search_query("formal verification zero knowledge protocols latest")
+        self.assertEqual(query, "all:formal AND all:verification AND all:zero AND all:knowledge AND all:protocols")
 
 
 if __name__ == "__main__":

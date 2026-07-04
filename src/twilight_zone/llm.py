@@ -131,6 +131,11 @@ def evaluation_prompt(item: Dict[str, Any], interests: List[Dict[str, Any]], day
             "language_policy": "Return every user-facing field in Russian. Keep only URLs and original titles unchanged.",
             "style": "Short, literary, human. No academic throat-clearing, no grant-proposal prose, no long justification.",
             "hard_filter": "Reject ordinary news, thin SEO, and generic productivity content.",
+            "relevance_rule": (
+                "Technical, mathematical, or arXiv content is not automatically valuable. "
+                "Score below 0.35 unless the item explicitly matches a core interest or creates a strong bridge. "
+                "Score 0 for unrelated science, random engineering, dictionary pages, generic company pages, travel, medicine, games, or SEO."
+            ),
             "score_meaning": "0.0 useless, 0.68 minimum for queueing, 0.85 rare excellent.",
             "item": item,
             "interests": interests,
