@@ -125,7 +125,7 @@ class TwilightZoneService:
             self._mark_callback_reaction(callback_query, parsed["delivery_id"], reaction)
             callback_id = callback_query.get("id")
             if callback_id:
-                self.telegram.answer_callback_query(callback_id, self._callback_ack(reaction))
+                self._answer_callback(callback_id, reaction)
             if reaction in {"more_like_this", "go_deeper", "more_twilight"}:
                 self._send_immediate_followup(reaction)
             return reaction
@@ -198,6 +198,12 @@ class TwilightZoneService:
         if reaction == "more_twilight":
             return "Ищу страннее"
         return "Принял"
+
+    def _answer_callback(self, callback_id: str, reaction: str) -> None:
+        try:
+            self.telegram.answer_callback_query(callback_id, self._callback_ack(reaction))
+        except Exception:
+            LOGGER.warning("failed to answer callback query", exc_info=True)
 
     def _mark_callback_reaction(self, callback_query: Dict[str, Any], delivery_id: int, reaction: str) -> None:
         message = callback_query.get("message") or {}

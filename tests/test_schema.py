@@ -23,13 +23,22 @@ class RecordingTelegramClient(TelegramClient):
     def __init__(self):
         super().__init__("", "", dry_run=True)
         self.edited_reply_markup = None
+        self.fail_answer_callback = False
+        self.fail_edit_reply_markup = False
 
     def edit_message_reply_markup(self, chat_id, message_id, reply_markup=None):
+        if self.fail_edit_reply_markup:
+            raise RuntimeError("edit failed")
         self.edited_reply_markup = {
             "chat_id": chat_id,
             "message_id": message_id,
             "reply_markup": reply_markup,
         }
+        return {"ok": True, "dry_run": True}
+
+    def answer_callback_query(self, callback_query_id, text="Принял"):
+        if self.fail_answer_callback:
+            raise RuntimeError("answer failed")
         return {"ok": True, "dry_run": True}
 
 
@@ -139,6 +148,26 @@ class SchemaTests(unittest.TestCase):
         self.assertEqual(telegram.edited_reply_markup["chat_id"], 123)
         buttons = telegram.edited_reply_markup["reply_markup"]["inline_keyboard"]
         self.assertEqual(buttons[1][1]["text"], "✅ Учтено: Мимо")
+
+    def test_callback_api_errors_do_not_drop_update(self):
+        service, _db, repo = self.make_service()
+        telegram = RecordingTelegramClient()
+        telegram.fail_answer_callback = True
+        telegram.fail_edit_reply_markup = True
+        service.telegram = telegram
+        service.search_once()
+        delivery_id = service.queue_best_once()
+        update = {
+            "callback_query": {
+                "id": "callback-1",
+                "data": f"react:{delivery_id}:miss",
+                "message": {"chat": {"id": 123}, "message_id": 456},
+            }
+        }
+        reaction = service.handle_telegram_update(update)
+        self.assertEqual(reaction, "miss")
+        latest = repo.latest_reaction_at()
+        self.assertIsNotNone(latest)
 
     def test_reaction_keyboard_uses_callback_data(self):
         keyboard = reaction_keyboard(7)
