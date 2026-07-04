@@ -7,7 +7,15 @@ from .db import Database, Repository
 from .llm import LLMProvider, strategy_prompt
 from .scoring import SYSTEM_PROMPT, evaluate_material
 from .search import SearchProvider
-from .telegram import TelegramClient, parse_callback_reaction, parse_reaction, reaction_keyboard
+from .telegram import (
+    HELP_TEXT,
+    TelegramClient,
+    html_escape,
+    is_help_request,
+    parse_callback_reaction,
+    parse_reaction,
+    reaction_keyboard,
+)
 
 
 class TwilightZoneService:
@@ -69,7 +77,11 @@ class TwilightZoneService:
             delivery = self.repo.next_queued_delivery()
             if not delivery:
                 return None
-        result = self.telegram.send_message(delivery["message"], reply_markup=reaction_keyboard(int(delivery["id"])))
+        result = self.telegram.send_message(
+            delivery["message"],
+            reply_markup=reaction_keyboard(int(delivery["id"])),
+            parse_mode="HTML",
+        )
         message_id = (result.get("result") or {}).get("message_id")
         if message_id is not None:
             self.repo.set_kv(f"telegram_message:{message_id}", int(delivery["id"]))
@@ -96,11 +108,16 @@ class TwilightZoneService:
             self._apply_reaction_to_day_state(reaction)
             callback_id = callback_query.get("id")
             if callback_id:
-                self.telegram.answer_callback_query(callback_id, "Принял")
+                self.telegram.answer_callback_query(callback_id, self._callback_ack(reaction))
+            if reaction in {"more_like_this", "go_deeper"}:
+                self._send_immediate_followup(reaction)
             return reaction
 
         message = update.get("message") or update.get("edited_message") or {}
         text = message.get("text", "")
+        if is_help_request(text):
+            self.telegram.send_message(HELP_TEXT)
+            return "help"
         reaction = parse_reaction(text)
         if not reaction:
             return None
@@ -125,6 +142,8 @@ class TwilightZoneService:
     def _apply_reaction_to_day_state(self, reaction: str) -> None:
         if reaction == "too_heavy":
             self.repo.update_day_state(energy="low", overload=True, mode="twilight")
+        elif reaction == "more_like_this":
+            self.repo.update_day_state(notes="Пользователь попросил больше похожего прямо сейчас.")
         elif reaction == "more_practice":
             self.repo.update_day_state(mode="practice", overload=False)
         elif reaction == "more_twilight":
@@ -132,11 +151,30 @@ class TwilightZoneService:
         elif reaction == "go_deeper":
             self.repo.update_day_state(mode="deep")
 
+    def _send_immediate_followup(self, reaction: str) -> None:
+        if reaction == "go_deeper":
+            self.repo.update_day_state(mode="deep", notes="Пользователь попросил углубиться прямо сейчас.")
+        elif reaction == "more_like_this":
+            self.repo.update_day_state(notes="Пользователь попросил похожее продолжение прямо сейчас.")
+        self.search_once()
+        delivered = self.deliver_once()
+        if delivered is None:
+            self.telegram.send_message(
+                "Принял сигнал. Прямо сейчас сильного продолжения не нашел; лучше ничего, чем слабая догонялка."
+            )
+
+    def _callback_ack(self, reaction: str) -> str:
+        if reaction == "more_like_this":
+            return "Ищу похожее"
+        if reaction == "go_deeper":
+            return "Ищу глубже"
+        return "Принял"
+
 
 def render_message(item: Dict[str, Any], evaluation: Dict[str, Any]) -> str:
-    title = item["title"].strip() or "Untitled"
-    why = evaluation.get("why", "Похоже на материал с хорошей связностью с твоей картой интересов.")
-    summary = evaluation.get("summary_ru") or item.get("snippet", "").strip()
+    title = html_escape(item["title"].strip() or "Untitled")
+    why = html_escape(_compact_text(evaluation.get("why", "Похоже на хорошую находку."), max_sentences=1, max_chars=180))
+    summary = _compact_text(evaluation.get("summary_ru") or item.get("snippet", "").strip(), max_sentences=3, max_chars=420)
     url = item["url"]
     label = _message_label(evaluation)
     parts = [
@@ -145,14 +183,48 @@ def render_message(item: Dict[str, Any], evaluation: Dict[str, Any]) -> str:
         f"Почему показать: {why}",
     ]
     if summary:
-        parts.append(str(summary))
+        parts.append(html_escape(summary))
     parts.extend(
         [
             "",
-            f"Источник: {url}",
+            f"Источник: {_render_source(url)}",
         ]
     )
     return "\n".join(parts)
+
+
+def _render_source(url: str) -> str:
+    if url.startswith("http://") or url.startswith("https://"):
+        safe_url = escape_url(url)
+        return f'<a href="{safe_url}">открыть</a>'
+    return f"{html_escape(url)} (тестовый источник, не открывается)"
+
+
+def escape_url(url: str) -> str:
+    return str(url).replace("&", "&amp;").replace('"', "%22")
+
+
+def _compact_text(value: object, max_sentences: int, max_chars: int) -> str:
+    text = " ".join(str(value or "").split())
+    if not text:
+        return ""
+    sentences = []
+    current = ""
+    for char in text:
+        current += char
+        if char in ".!?":
+            sentence = current.strip()
+            if sentence:
+                sentences.append(sentence)
+            current = ""
+            if len(sentences) >= max_sentences:
+                break
+    if len(sentences) < max_sentences and current.strip():
+        sentences.append(current.strip())
+    compact = " ".join(sentences) if sentences else text
+    if len(compact) <= max_chars:
+        return compact
+    return compact[: max_chars - 1].rstrip() + "..."
 
 
 def _message_label(evaluation: Dict[str, Any]) -> str:

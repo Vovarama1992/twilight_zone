@@ -6,7 +6,7 @@ from twilight_zone.config import Config
 from twilight_zone.db import Database, Repository, SCHEMA_VERSION
 from twilight_zone.llm import NullLLMProvider
 from twilight_zone.search import OfflineSearchProvider
-from twilight_zone.service import TwilightZoneService
+from twilight_zone.service import TwilightZoneService, render_message
 from twilight_zone.telegram import TelegramClient, parse_callback_reaction, parse_reaction, reaction_keyboard
 
 
@@ -68,6 +68,19 @@ class SchemaTests(unittest.TestCase):
         first_button = keyboard["inline_keyboard"][0][0]
         self.assertEqual(first_button["callback_data"], "react:7:more_like_this")
         self.assertEqual(parse_callback_reaction("react:7:more_like_this")["delivery_id"], 7)
+
+    def test_render_message_links_http_sources(self):
+        message = render_message(
+            {"title": "Title", "url": "https://example.com/a?x=1&y=2", "snippet": "Snippet"},
+            {"why": "Почему. Лишнее.", "summary_ru": "Первое. Второе. Третье. Четвертое.", "tags": []},
+        )
+        self.assertIn('<a href="https://example.com/a?x=1&amp;y=2">открыть</a>', message)
+        self.assertNotIn("Четвертое", message)
+
+    def test_help_command_sends_guide(self):
+        service, _db, _repo = self.make_service()
+        reaction = service.handle_telegram_update({"message": {"text": "/help"}})
+        self.assertEqual(reaction, "help")
 
 
 class ConfigTests(unittest.TestCase):

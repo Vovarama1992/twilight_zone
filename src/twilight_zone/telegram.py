@@ -4,6 +4,7 @@ import json
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
+from html import escape
 from typing import Any, Dict, Optional
 
 from .config import Config
@@ -31,6 +32,19 @@ REACTION_LABELS = {
     "more_practice": "⚒ Практика",
 }
 
+HELP_TEXT = """Как пользоваться кнопками:
+
+👍 Еще — это попало в тему. Усиль похожие материалы и попробуй прислать продолжение прямо сейчас.
+🧠 Глубже — тема интересна, но хочется серьезнее/труднее/ближе к первоисточникам. Тоже пробует продолжить прямо сейчас.
+↔ Связать — хочется мост к другой области: математика ↔ инженерия, агенты ↔ продукт, HoTT ↔ verification и так далее.
+👎 Мимо — не тот вкус. Ослабить такие материалы.
+📌 Интерес — зафиксировать как новый или более важный интерес.
+➖ Тяжело — сейчас перегруз; лучше легче, короче, прогулочнее.
+🎲 Twilight — больше странного, глубокого, необычных мыслителей и идей с послевкусием.
+⚒ Практика — больше применимого: архитектура, код, продукты, инструменты.
+
+Источник в обычных материалах будет кликабельным. Если видишь seed:// — это тестовая заглушка, она не открывается."""
+
 
 @dataclass
 class TelegramClient:
@@ -38,7 +52,12 @@ class TelegramClient:
     user_id: str
     dry_run: bool = True
 
-    def send_message(self, text: str, reply_markup: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    def send_message(
+        self,
+        text: str,
+        reply_markup: Optional[Dict[str, Any]] = None,
+        parse_mode: Optional[str] = None,
+    ) -> Dict[str, Any]:
         if self.dry_run or not self.token or not self.user_id:
             print("\n--- TELEGRAM DRY RUN ---")
             print(text)
@@ -52,6 +71,8 @@ class TelegramClient:
             "text": text,
             "disable_web_page_preview": "false",
         }
+        if parse_mode:
+            payload_data["parse_mode"] = parse_mode
         if reply_markup:
             payload_data["reply_markup"] = json.dumps(reply_markup, ensure_ascii=False)
         payload = urllib.parse.urlencode(payload_data).encode("utf-8")
@@ -109,6 +130,11 @@ def parse_reaction(text: str) -> Optional[str]:
     return None
 
 
+def is_help_request(text: str) -> bool:
+    lowered = text.strip().lower()
+    return lowered in {"/help", "help", "помощь", "кнопки", "что значит кнопки"}
+
+
 def reaction_keyboard(delivery_id: int) -> Dict[str, Any]:
     rows = [
         ["more_like_this", "go_deeper"],
@@ -139,3 +165,7 @@ def parse_callback_reaction(data: str) -> Optional[Dict[str, Any]]:
     if reaction not in REACTION_LABELS:
         return None
     return {"delivery_id": delivery_id, "reaction": reaction}
+
+
+def html_escape(value: object) -> str:
+    return escape(str(value), quote=False)
