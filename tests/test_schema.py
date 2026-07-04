@@ -6,7 +6,13 @@ from pathlib import Path
 from twilight_zone.config import Config
 from twilight_zone.db import Database, Repository, SCHEMA_VERSION
 from twilight_zone.llm import NullLLMProvider
-from twilight_zone.search import OfflineSearchProvider, _DuckDuckGoHTMLParser, _normalize_bing_url, _parse_bing_results
+from twilight_zone.search import (
+    OfflineSearchProvider,
+    _DuckDuckGoHTMLParser,
+    _normalize_bing_url,
+    _parse_arxiv_results,
+    _parse_bing_results,
+)
 from twilight_zone.service import TwilightZoneService, render_message
 from twilight_zone.telegram import TelegramClient, parse_callback_reaction, parse_reaction, reaction_keyboard
 
@@ -147,6 +153,20 @@ class ConfigTests(unittest.TestCase):
     def test_bing_redirect_url_is_decoded(self):
         url = "https://www.bing.com/ck/a?u=a1aHR0cHM6Ly9leGFtcGxlLmNvbS9wYXBlcg"
         self.assertEqual(_normalize_bing_url(url), "https://example.com/paper")
+
+    def test_arxiv_parser_extracts_entries(self):
+        xml = """
+        <feed xmlns="http://www.w3.org/2005/Atom">
+          <entry>
+            <id>https://arxiv.org/abs/1234.5678</id>
+            <title> A paper about agents </title>
+            <summary> Long abstract. </summary>
+          </entry>
+        </feed>
+        """
+        results = _parse_arxiv_results(xml)
+        self.assertEqual(results[0]["title"], "A paper about agents")
+        self.assertEqual(results[0]["url"], "https://arxiv.org/abs/1234.5678")
 
 
 if __name__ == "__main__":

@@ -65,7 +65,7 @@ class Config:
             gemini_model=os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
             search_endpoint=os.getenv("TZ_SEARCH_ENDPOINT", ""),
             search_api_key=os.getenv("TZ_SEARCH_API_KEY", ""),
-            search_provider=os.getenv("TZ_SEARCH_PROVIDER", "bing").strip().lower(),
+            search_provider=os.getenv("TZ_SEARCH_PROVIDER", "arxiv").strip().lower(),
             telegram_bot_token=os.getenv("TELEGRAM_BOT_TOKEN", ""),
             telegram_user_id=os.getenv("TELEGRAM_USER_ID", ""),
             telegram_dry_run=_bool_env("TZ_TELEGRAM_DRY_RUN", True),

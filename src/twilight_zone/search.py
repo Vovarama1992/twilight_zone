@@ -6,6 +6,7 @@ import re
 import base64
 import urllib.parse
 import urllib.request
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from html import unescape
 from typing import Dict, Iterable, List, Optional, Protocol
@@ -201,6 +202,52 @@ class BingSearchProvider:
         return results
 
 
+@dataclass
+class ArxivSearchProvider:
+    def search(self, queries: Iterable[str], limit_per_query: int = 3) -> List[Dict[str, str]]:
+        results: List[Dict[str, str]] = []
+        seen = set()
+        for query in list(queries):
+            url = "https://export.arxiv.org/api/query?" + urllib.parse.urlencode(
+                {
+                    "search_query": f"all:{query}",
+                    "start": 0,
+                    "max_results": limit_per_query,
+                    "sortBy": "submittedDate",
+                    "sortOrder": "descending",
+                }
+            )
+            request = urllib.request.Request(url, headers={"User-Agent": "TwilightZoneBot/0.1"})
+            try:
+                with urllib.request.urlopen(request, timeout=30) as response:
+                    xml = response.read().decode("utf-8", errors="replace")
+            except Exception:
+                continue
+            for item in _parse_arxiv_results(xml):
+                if item["url"] in seen:
+                    continue
+                seen.add(item["url"])
+                results.append(item)
+        return results
+
+
+def _parse_arxiv_results(xml: str) -> List[Dict[str, str]]:
+    namespace = {"atom": "http://www.w3.org/2005/Atom"}
+    root = ET.fromstring(xml)
+    items: List[Dict[str, str]] = []
+    for entry in root.findall("atom:entry", namespace):
+        title = _clean_xml_text(entry.findtext("atom:title", "", namespace))
+        summary = _clean_xml_text(entry.findtext("atom:summary", "", namespace))
+        url = entry.findtext("atom:id", "", namespace).strip()
+        if title and url:
+            items.append({"title": title, "url": url, "source": "arxiv", "snippet": summary})
+    return items
+
+
+def _clean_xml_text(value: str) -> str:
+    return " ".join(value.split())
+
+
 def _parse_bing_results(html: str) -> List[Dict[str, str]]:
     items: List[Dict[str, str]] = []
     blocks = re.findall(r'<li[^>]+class="[^"]*\bb_algo\b[^"]*"[^>]*>(.*?)</li>', html, flags=re.DOTALL)
@@ -267,6 +314,8 @@ def build_search(config: Config) -> SearchProvider:
         return JsonEndpointSearchProvider(config.search_endpoint, config.search_api_key)
     if config.search_provider == "offline":
         return OfflineSearchProvider()
+    if config.search_provider == "bing":
+        return BingSearchProvider()
     if config.search_provider == "duckduckgo":
         return DuckDuckGoSearchProvider()
-    return BingSearchProvider()
+    return ArxivSearchProvider()
