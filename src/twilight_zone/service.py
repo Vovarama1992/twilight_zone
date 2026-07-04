@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 from .db import Database, Repository
@@ -68,7 +69,9 @@ class TwilightZoneService:
         self.repo.mark_candidate(item["id"], "queued")
         return delivery_id
 
-    def deliver_once(self) -> Optional[int]:
+    def deliver_once(self, force: bool = False) -> Optional[int]:
+        if not force and not self._delivery_allowed():
+            return None
         delivery = self.repo.next_queued_delivery()
         if not delivery:
             queued = self.queue_best_once()
@@ -87,6 +90,15 @@ class TwilightZoneService:
             self.repo.set_kv(f"telegram_message:{message_id}", int(delivery["id"]))
         self.repo.mark_delivery_sent(delivery["id"])
         return int(delivery["id"])
+
+    def _delivery_allowed(self) -> bool:
+        last_sent = _parse_sqlite_timestamp(self.repo.latest_sent_delivery_at())
+        if last_sent is None:
+            return True
+        last_reaction = _parse_sqlite_timestamp(self.repo.latest_reaction_at())
+        now = datetime.utcnow()
+        interval = timedelta(hours=1) if last_reaction and last_reaction > last_sent else timedelta(hours=3)
+        return now - last_sent >= interval
 
     def set_day_state(
         self,
@@ -127,6 +139,8 @@ class TwilightZoneService:
             delivery_id = self.repo.get_kv(f"telegram_message:{reply.get('message_id')}", None)
         self.repo.record_reaction(delivery_id, reaction, update)
         self._apply_reaction_to_day_state(reaction)
+        if reaction in {"more_like_this", "go_deeper"}:
+            self._send_immediate_followup(reaction)
         return reaction
 
     def poll_telegram_once(self) -> int:
@@ -157,7 +171,7 @@ class TwilightZoneService:
         elif reaction == "more_like_this":
             self.repo.update_day_state(notes="Пользователь попросил похожее продолжение прямо сейчас.")
         self.search_once()
-        delivered = self.deliver_once()
+        delivered = self.deliver_once(force=True)
         if delivered is None:
             self.telegram.send_message(
                 "Принял сигнал. Прямо сейчас сильного продолжения не нашел; лучше ничего, чем слабая догонялка."
@@ -225,6 +239,12 @@ def _compact_text(value: object, max_sentences: int, max_chars: int) -> str:
     if len(compact) <= max_chars:
         return compact
     return compact[: max_chars - 1].rstrip() + "..."
+
+
+def _parse_sqlite_timestamp(value: Optional[str]) -> Optional[datetime]:
+    if not value:
+        return None
+    return datetime.strptime(value, "%Y-%m-%d %H:%M:%S")
 
 
 def _message_label(evaluation: Dict[str, Any]) -> str:

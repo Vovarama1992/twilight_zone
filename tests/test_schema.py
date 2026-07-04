@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from twilight_zone.config import Config
@@ -41,6 +42,36 @@ class SchemaTests(unittest.TestCase):
         delivery_id = service.deliver_once()
         self.assertIsInstance(delivery_id, int)
         self.assertIsNone(repo.next_queued_delivery())
+
+    def test_delivery_slows_to_three_hours_without_reaction(self):
+        service, db, _repo = self.make_service()
+        service.search_once()
+        first_delivery = service.deliver_once()
+        self.assertIsInstance(first_delivery, int)
+        with db.connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO candidate_materials (title, url, score, status, evaluation_json)
+                VALUES ('Second', 'seed://second', 0.9, 'new', '{"score": 0.9, "why": "Ок", "summary_ru": "Ок"}')
+                """
+            )
+        self.assertIsNone(service.deliver_once())
+
+    def test_reaction_allows_hourly_delivery(self):
+        service, db, _repo = self.make_service()
+        service.search_once()
+        first_delivery = service.deliver_once()
+        one_hour_ago = (datetime.utcnow() - timedelta(hours=1, minutes=1)).strftime("%Y-%m-%d %H:%M:%S")
+        with db.connect() as conn:
+            conn.execute("UPDATE deliveries SET sent_at = ? WHERE id = ?", (one_hour_ago, first_delivery))
+            conn.execute(
+                """
+                INSERT INTO candidate_materials (title, url, score, status, evaluation_json)
+                VALUES ('Second', 'seed://second', 0.9, 'new', '{"score": 0.9, "why": "Ок", "summary_ru": "Ок"}')
+                """
+            )
+        service.handle_telegram_update({"message": {"text": "📌 Интерес"}})
+        self.assertIsInstance(service.deliver_once(), int)
 
     def test_reaction_updates_day_state(self):
         service, _db, repo = self.make_service()

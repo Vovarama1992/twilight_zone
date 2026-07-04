@@ -80,6 +80,12 @@ Supported reaction prefixes:
 
 Reactions already update the current day mode for the MVP. The next layer should update interest weights and edge evidence more aggressively.
 
+Delivery rhythm:
+
+- If the user gives ordinary reactions, the bot can send at most once per hour.
+- If the user gives no reactions after the last delivery, the bot slows down to at most once per three hours.
+- `👍 Еще` and `🧠 Глубже` are explicit immediate-followup requests and bypass the normal delivery cooldown.
+
 ## Tests
 
 ```bash

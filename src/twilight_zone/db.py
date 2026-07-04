@@ -303,6 +303,18 @@ class Repository:
                 (delivery_id,),
             )
 
+    def latest_sent_delivery_at(self) -> Optional[str]:
+        with self.db.connect() as conn:
+            row = conn.execute(
+                "SELECT sent_at FROM deliveries WHERE status = 'sent' AND sent_at IS NOT NULL ORDER BY sent_at DESC LIMIT 1"
+            ).fetchone()
+            return str(row["sent_at"]) if row else None
+
+    def latest_reaction_at(self) -> Optional[str]:
+        with self.db.connect() as conn:
+            row = conn.execute("SELECT created_at FROM reactions ORDER BY created_at DESC LIMIT 1").fetchone()
+            return str(row["created_at"]) if row else None
+
     def record_reaction(self, delivery_id: Optional[int], reaction: str, payload: Dict[str, Any]) -> int:
         with self.db.connect() as conn:
             cur = conn.execute(
