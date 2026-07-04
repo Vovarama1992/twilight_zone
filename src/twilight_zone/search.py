@@ -252,6 +252,72 @@ class ArxivSearchProvider:
         return results
 
 
+@dataclass
+class BraveSearchProvider:
+    api_key: str
+    country: str = "US"
+    search_lang: str = "en"
+
+    def search(self, queries: Iterable[str], limit_per_query: int = 3) -> List[Dict[str, str]]:
+        results: List[Dict[str, str]] = []
+        seen = set()
+        for query in list(queries):
+            params = {
+                "q": _research_query(query),
+                "count": max(1, min(limit_per_query, 10)),
+                "country": self.country,
+                "search_lang": self.search_lang,
+                "safesearch": "moderate",
+                "text_decorations": "false",
+                "spellcheck": "true",
+            }
+            url = "https://api.search.brave.com/res/v1/web/search?" + urllib.parse.urlencode(params)
+            request = urllib.request.Request(
+                url,
+                headers={
+                    "Accept": "application/json",
+                    "X-Subscription-Token": self.api_key,
+                },
+            )
+            try:
+                with urllib.request.urlopen(request, timeout=30) as response:
+                    data = json.loads(response.read().decode("utf-8"))
+            except Exception:
+                continue
+            added_for_query = 0
+            for item in _parse_brave_results(data):
+                item_url = item["url"]
+                if _is_blocked_result(item):
+                    continue
+                if item_url in seen:
+                    continue
+                seen.add(item_url)
+                results.append(item)
+                added_for_query += 1
+                if added_for_query >= limit_per_query:
+                    break
+        return results
+
+
+def _parse_brave_results(data: Dict[str, object]) -> List[Dict[str, str]]:
+    web = data.get("web")
+    if not isinstance(web, dict):
+        return []
+    raw_results = web.get("results", [])
+    if not isinstance(raw_results, list):
+        return []
+    items: List[Dict[str, str]] = []
+    for raw in raw_results:
+        if not isinstance(raw, dict):
+            continue
+        url = str(raw.get("url") or "")
+        title = _strip_html(str(raw.get("title") or ""))
+        snippet = _strip_html(str(raw.get("description") or ""))
+        if title and url.startswith(("http://", "https://")):
+            items.append({"title": title, "url": url, "source": "brave", "snippet": snippet})
+    return items
+
+
 def _parse_arxiv_results(xml: str) -> List[Dict[str, str]]:
     namespace = {"atom": "http://www.w3.org/2005/Atom"}
     root = ET.fromstring(xml)
@@ -345,6 +411,12 @@ def _normalize_duckduckgo_url(url: str) -> str:
 def build_search(config: Config) -> SearchProvider:
     if config.search_endpoint:
         return JsonEndpointSearchProvider(config.search_endpoint, config.search_api_key)
+    if config.search_provider == "brave" and config.brave_search_api_key:
+        return BraveSearchProvider(config.brave_search_api_key)
+    if config.search_provider == "brave":
+        return ArxivSearchProvider()
+    if config.brave_search_api_key and config.search_provider in {"auto", ""}:
+        return BraveSearchProvider(config.brave_search_api_key)
     if config.search_provider == "offline":
         return OfflineSearchProvider()
     if config.search_provider == "bing":

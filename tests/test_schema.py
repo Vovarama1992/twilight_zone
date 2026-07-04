@@ -13,9 +13,24 @@ from twilight_zone.search import (
     _normalize_bing_url,
     _parse_arxiv_results,
     _parse_bing_results,
+    _parse_brave_results,
 )
 from twilight_zone.service import TwilightZoneService, render_message
 from twilight_zone.telegram import TelegramClient, parse_callback_reaction, parse_reaction, reaction_keyboard
+
+
+class RecordingTelegramClient(TelegramClient):
+    def __init__(self):
+        super().__init__("", "", dry_run=True)
+        self.edited_reply_markup = None
+
+    def edit_message_reply_markup(self, chat_id, message_id, reply_markup=None):
+        self.edited_reply_markup = {
+            "chat_id": chat_id,
+            "message_id": message_id,
+            "reply_markup": reply_markup,
+        }
+        return {"ok": True, "dry_run": True}
 
 
 class SchemaTests(unittest.TestCase):
@@ -96,10 +111,34 @@ class SchemaTests(unittest.TestCase):
         service, _db, repo = self.make_service()
         service.search_once()
         delivery_id = service.queue_best_once()
-        update = {"callback_query": {"id": "callback-1", "data": f"react:{delivery_id}:more_practice"}}
+        update = {
+            "callback_query": {
+                "id": "callback-1",
+                "data": f"react:{delivery_id}:more_practice",
+            }
+        }
         reaction = service.handle_telegram_update(update)
         self.assertEqual(reaction, "more_practice")
         self.assertEqual(repo.day_state()["mode"], "practice")
+
+    def test_callback_reaction_marks_selected_button(self):
+        service, _db, _repo = self.make_service()
+        telegram = RecordingTelegramClient()
+        service.telegram = telegram
+        service.search_once()
+        delivery_id = service.queue_best_once()
+        update = {
+            "callback_query": {
+                "id": "callback-1",
+                "data": f"react:{delivery_id}:miss",
+                "message": {"chat": {"id": 123}, "message_id": 456},
+            }
+        }
+        reaction = service.handle_telegram_update(update)
+        self.assertEqual(reaction, "miss")
+        self.assertEqual(telegram.edited_reply_markup["chat_id"], 123)
+        buttons = telegram.edited_reply_markup["reply_markup"]["inline_keyboard"]
+        self.assertEqual(buttons[1][1]["text"], "✅ 👎 Мимо")
 
     def test_reaction_keyboard_uses_callback_data(self):
         keyboard = reaction_keyboard(7)
@@ -107,6 +146,8 @@ class SchemaTests(unittest.TestCase):
         twilight_button = keyboard["inline_keyboard"][3][0]
         self.assertEqual(first_button["callback_data"], "react:7:more_like_this")
         self.assertEqual(twilight_button["text"], "🎲 Twilight")
+        selected = reaction_keyboard(7, selected="more_twilight")
+        self.assertEqual(selected["inline_keyboard"][3][0]["text"], "✅ 🎲 Twilight")
         self.assertEqual(parse_callback_reaction("react:7:more_like_this")["delivery_id"], 7)
 
     def test_render_message_links_http_sources(self):
@@ -172,6 +213,25 @@ class ConfigTests(unittest.TestCase):
     def test_arxiv_query_uses_key_terms_with_and(self):
         query = _arxiv_search_query("formal verification zero knowledge protocols latest")
         self.assertEqual(query, "all:formal AND all:verification AND all:zero AND all:knowledge AND all:protocols")
+
+    def test_brave_parser_extracts_web_results(self):
+        results = _parse_brave_results(
+            {
+                "web": {
+                    "results": [
+                        {
+                            "title": "Agent <strong>memory</strong>",
+                            "url": "https://example.com/agent-memory",
+                            "description": "A useful <b>research</b> note.",
+                        }
+                    ]
+                }
+            }
+        )
+        self.assertEqual(results[0]["title"], "Agent memory")
+        self.assertEqual(results[0]["url"], "https://example.com/agent-memory")
+        self.assertEqual(results[0]["source"], "brave")
+        self.assertEqual(results[0]["snippet"], "A useful research note.")
 
 
 if __name__ == "__main__":

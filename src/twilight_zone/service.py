@@ -118,6 +118,7 @@ class TwilightZoneService:
             reaction = parsed["reaction"]
             self.repo.record_reaction(parsed["delivery_id"], reaction, update)
             self._apply_reaction_to_day_state(reaction)
+            self._mark_callback_reaction(callback_query, parsed["delivery_id"], reaction)
             callback_id = callback_query.get("id")
             if callback_id:
                 self.telegram.answer_callback_query(callback_id, self._callback_ack(reaction))
@@ -193,6 +194,22 @@ class TwilightZoneService:
         if reaction == "more_twilight":
             return "Ищу страннее"
         return "Принял"
+
+    def _mark_callback_reaction(self, callback_query: Dict[str, Any], delivery_id: int, reaction: str) -> None:
+        message = callback_query.get("message") or {}
+        chat = message.get("chat") or {}
+        chat_id = chat.get("id")
+        message_id = message.get("message_id")
+        if chat_id is None or message_id is None:
+            return
+        try:
+            self.telegram.edit_message_reply_markup(
+                chat_id,
+                message_id,
+                reply_markup=reaction_keyboard(delivery_id, selected=reaction),
+            )
+        except Exception:
+            return
 
 
 def render_message(item: Dict[str, Any], evaluation: Dict[str, Any]) -> str:

@@ -6,7 +6,7 @@ The MVP is intentionally small:
 
 - Python + SQLite, no required runtime dependencies.
 - Offline-safe defaults: no secrets in code, dry-run Telegram, deterministic LLM/search stubs.
-- Replaceable providers for OpenAI, Gemini, generic JSON search, and Telegram.
+- Replaceable providers for OpenAI, Gemini, Brave Search, arXiv, generic JSON search, and Telegram.
 - Persistent graph-ish state: interests, interest edges, current day mode, candidates, deliveries, reactions, and strategy runs.
 
 ## Setup
@@ -47,7 +47,8 @@ Copy `.env.example` and fill only what you need.
 - `TZ_LLM_PROVIDER`: `null`, `openai`, or `gemini`.
 - `OPENAI_API_KEY`, `OPENAI_MODEL`: OpenAI provider.
 - `GEMINI_API_KEY`, `GEMINI_MODEL`: Gemini provider.
-- `TZ_SEARCH_PROVIDER`: `arxiv` by default, `bing`/`duckduckgo` as broad web options, `offline` for deterministic seed candidates.
+- `TZ_SEARCH_PROVIDER`: `arxiv` by default, `brave` for live web, `bing`/`duckduckgo` as rough fallback options, `offline` for deterministic seed candidates.
+- `BRAVE_SEARCH_API_KEY`: Brave Search API token for normal web results.
 - `TZ_SEARCH_ENDPOINT`: optional JSON search endpoint accepting `q` and `limit`.
 - `TELEGRAM_BOT_TOKEN`, `TELEGRAM_USER_ID`: Telegram delivery.
 - `TZ_TELEGRAM_DRY_RUN`: keep `true` until you want real sends.

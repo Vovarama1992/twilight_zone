@@ -98,6 +98,28 @@ class TelegramClient:
         with urllib.request.urlopen(request, timeout=30) as response:
             return json.loads(response.read().decode("utf-8"))
 
+    def edit_message_reply_markup(
+        self,
+        chat_id: object,
+        message_id: object,
+        reply_markup: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        if self.dry_run or not self.token:
+            return {"ok": True, "dry_run": True}
+        payload_data = {
+            "chat_id": chat_id,
+            "message_id": message_id,
+            "reply_markup": json.dumps(reply_markup or {}, ensure_ascii=False),
+        }
+        payload = urllib.parse.urlencode(payload_data).encode("utf-8")
+        request = urllib.request.Request(
+            f"https://api.telegram.org/bot{self.token}/editMessageReplyMarkup",
+            data=payload,
+            method="POST",
+        )
+        with urllib.request.urlopen(request, timeout=30) as response:
+            return json.loads(response.read().decode("utf-8"))
+
     def get_updates(self, offset: Optional[int] = None) -> Dict[str, Any]:
         if not self.token:
             return {"ok": True, "result": []}
@@ -137,7 +159,7 @@ def is_help_request(text: str) -> bool:
     return lowered in {"/help", "help", "помощь", "кнопки", "что значит кнопки"}
 
 
-def reaction_keyboard(delivery_id: int) -> Dict[str, Any]:
+def reaction_keyboard(delivery_id: int, selected: Optional[str] = None) -> Dict[str, Any]:
     rows = [
         ["more_like_this", "go_deeper"],
         ["connect_topic", "miss"],
@@ -147,12 +169,22 @@ def reaction_keyboard(delivery_id: int) -> Dict[str, Any]:
     return {
         "inline_keyboard": [
             [
-                {"text": REACTION_LABELS[reaction], "callback_data": f"react:{delivery_id}:{reaction}"}
+                {
+                    "text": _reaction_button_label(reaction, selected),
+                    "callback_data": f"react:{delivery_id}:{reaction}",
+                }
                 for reaction in row
             ]
             for row in rows
         ]
     }
+
+
+def _reaction_button_label(reaction: str, selected: Optional[str]) -> str:
+    label = REACTION_LABELS[reaction]
+    if selected == reaction:
+        return f"✅ {label}"
+    return label
 
 
 def parse_callback_reaction(data: str) -> Optional[Dict[str, Any]]:
