@@ -99,7 +99,7 @@ class SchemaTests(unittest.TestCase):
         first_button = keyboard["inline_keyboard"][0][0]
         twilight_button = keyboard["inline_keyboard"][3][0]
         self.assertEqual(first_button["callback_data"], "react:7:more_like_this")
-        self.assertEqual(twilight_button["text"], "🎲 Страннее")
+        self.assertEqual(twilight_button["text"], "🎲 Twilight")
         self.assertEqual(parse_callback_reaction("react:7:more_like_this")["delivery_id"], 7)
 
     def test_render_message_links_http_sources(self):

@@ -75,7 +75,7 @@ Supported reaction prefixes:
 - `👎` miss
 - `📌` new interest
 - `➖` too heavy
-- `🎲` stranger version of this direction
+- `🎲` Twilight: stranger version of this good direction
 - `⚒` more practice
 
 Reactions already update the current day mode for the MVP. The next layer should update interest weights and edge evidence more aggressively.
@@ -84,7 +84,7 @@ Delivery rhythm:
 
 - If the user gives ordinary reactions, the bot can send at most once per hour.
 - If the user gives no reactions after the last delivery, the bot slows down to at most once per three hours.
-- `👍 Еще`, `🧠 Глубже`, and `🎲 Страннее` are explicit immediate-followup requests and bypass the normal delivery cooldown.
+- `👍 Еще`, `🧠 Глубже`, and `🎲 Twilight` are explicit immediate-followup requests and bypass the normal delivery cooldown.
 
 ## Tests
 
