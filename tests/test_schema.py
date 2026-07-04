@@ -6,6 +6,7 @@ from pathlib import Path
 from twilight_zone.config import Config
 from twilight_zone.db import Database, Repository, SCHEMA_VERSION
 from twilight_zone.llm import NullLLMProvider
+from twilight_zone.scoring import evaluate_material
 from twilight_zone.search import (
     OfflineSearchProvider,
     _DuckDuckGoHTMLParser,
@@ -191,6 +192,32 @@ class SchemaTests(unittest.TestCase):
         service, _db, _repo = self.make_service()
         reaction = service.handle_telegram_update({"message": {"text": "/help"}})
         self.assertEqual(reaction, "help")
+
+    def test_foreign_dense_math_is_penalized_without_bridge(self):
+        evaluation = evaluate_material(
+            NullLLMProvider(),
+            {
+                "title": "A Topological Formula for Potts Lattice Gauge Theory Correlations",
+                "url": "https://arxiv.org/abs/0000.0000",
+                "snippet": "Wilson loop variables, Potts lattice gauge theory, plaquette random cluster model.",
+            },
+            [],
+            {"mode": "balanced", "overload": 0},
+        )
+        self.assertLessEqual(evaluation["score"], 0.34)
+
+    def test_heavy_core_math_is_not_penalized_as_foreign(self):
+        evaluation = evaluate_material(
+            NullLLMProvider(),
+            {
+                "title": "Perfectoid spaces and p-adic Hodge theory",
+                "url": "https://arxiv.org/abs/0000.0001",
+                "snippet": "A technical note in p-adic geometry and algebraic geometry.",
+            },
+            [],
+            {"mode": "balanced", "overload": 0},
+        )
+        self.assertGreater(evaluation["score"], 0.34)
 
 
 class ConfigTests(unittest.TestCase):

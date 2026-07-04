@@ -160,9 +160,24 @@ class TwilightZoneService:
 
     def _apply_reaction_to_day_state(self, reaction: str) -> None:
         if reaction == "too_heavy":
-            self.repo.update_day_state(energy="low", overload=True, mode="twilight")
+            self.repo.update_day_state(
+                energy="low",
+                overload=True,
+                mode="twilight",
+                notes=(
+                    "Если материал из чужой области, нужен человеческий мостик и легкий вход. "
+                    "Плотную техническую жесткость оставлять для ядерных тем пользователя."
+                ),
+            )
         elif reaction == "more_like_this":
             self.repo.update_day_state(notes="Пользователь попросил больше похожего прямо сейчас.")
+        elif reaction == "miss":
+            self.repo.update_day_state(
+                notes=(
+                    "Последний материал был мимо. Особенно осторожно с чужой тяжелой математикой: "
+                    "без сильного моста или человеческой подачи лучше не слать."
+                )
+            )
         elif reaction == "more_practice":
             self.repo.update_day_state(mode="practice", overload=False)
         elif reaction == "more_twilight":

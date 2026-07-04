@@ -136,6 +136,18 @@ def evaluation_prompt(item: Dict[str, Any], interests: List[Dict[str, Any]], day
                 "Score below 0.35 unless the item explicitly matches a core interest or creates a strong bridge. "
                 "Score 0 for unrelated science, random engineering, dictionary pages, generic company pages, travel, medicine, games, or SEO."
             ),
+            "difficulty_rule": (
+                "The user likes real depth inside core zones: algebraic geometry, category theory, HoTT/type theory, "
+                "toposes, p-adic/perfectoid geometry, foundations, formal verification, crypto/ZK, LLM agents, and system architecture. "
+                "But hard material from a neighboring or foreign field must be treated as a human excursion: explain the hook, "
+                "why it might matter, and the bridge to the user's map. If it is just specialized theorem/reporting from another field "
+                "(for example lattice gauge theory, Potts/Ising models, statistical mechanics, random quantum/math physics) without a strong bridge, "
+                "score below 0.55. If it is both foreign and technically dense, score below 0.35."
+            ),
+            "voice_rule": (
+                "For foreign territories, do not summarize as if the user is already in that seminar. "
+                "Use a short human orientation: what kind of object this is, what strange idea is inside, and why opening it might be worth it."
+            ),
             "score_meaning": "0.0 useless, 0.68 minimum for queueing, 0.85 rare excellent.",
             "item": item,
             "interests": interests,
