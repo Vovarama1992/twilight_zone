@@ -1,0 +1,15 @@
+[Unit]
+Description=Twilight Zone personal research agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/twilight-zone
+EnvironmentFile=/opt/twilight-zone/.env
+ExecStart=/opt/twilight-zone/.venv/bin/twilight-zone run
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
