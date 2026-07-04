@@ -6,7 +6,7 @@ from pathlib import Path
 from twilight_zone.config import Config
 from twilight_zone.db import Database, Repository, SCHEMA_VERSION
 from twilight_zone.llm import NullLLMProvider
-from twilight_zone.search import OfflineSearchProvider, _DuckDuckGoHTMLParser
+from twilight_zone.search import OfflineSearchProvider, _DuckDuckGoHTMLParser, _parse_bing_results
 from twilight_zone.service import TwilightZoneService, render_message
 from twilight_zone.telegram import TelegramClient, parse_callback_reaction, parse_reaction, reaction_keyboard
 
@@ -132,6 +132,17 @@ class ConfigTests(unittest.TestCase):
         )
         self.assertEqual(parser.results[0]["title"], "A paper")
         self.assertEqual(parser.results[0]["url"], "https://example.com/paper")
+
+    def test_bing_parser_extracts_result_links(self):
+        results = _parse_bing_results(
+            """
+            <li class="b_algo"><h2><a href="https://example.com/paper">A <strong>paper</strong></a></h2>
+            <div class="b_caption"><p>Useful snippet.</p></div></li>
+            """
+        )
+        self.assertEqual(results[0]["title"], "A paper")
+        self.assertEqual(results[0]["url"], "https://example.com/paper")
+        self.assertEqual(results[0]["snippet"], "Useful snippet.")
 
 
 if __name__ == "__main__":

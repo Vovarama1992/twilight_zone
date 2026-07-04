@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from html.parser import HTMLParser
 import json
+import re
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
+from html import unescape
 from typing import Dict, Iterable, List, Optional, Protocol
 
 from .config import Config
@@ -143,6 +145,60 @@ class DuckDuckGoSearchProvider:
         return results
 
 
+@dataclass
+class BingSearchProvider:
+    def search(self, queries: Iterable[str], limit_per_query: int = 3) -> List[Dict[str, str]]:
+        results: List[Dict[str, str]] = []
+        seen = set()
+        for query in list(queries):
+            url = "https://www.bing.com/search?" + urllib.parse.urlencode({"q": query})
+            request = urllib.request.Request(
+                url,
+                headers={
+                    "User-Agent": "Mozilla/5.0 TwilightZoneBot/0.1",
+                    "Accept": "text/html",
+                    "Accept-Language": "en-US,en;q=0.9,ru;q=0.8",
+                },
+            )
+            try:
+                with urllib.request.urlopen(request, timeout=30) as response:
+                    html = response.read().decode("utf-8", errors="replace")
+            except Exception:
+                continue
+            added_for_query = 0
+            for item in _parse_bing_results(html):
+                item_url = item["url"]
+                if item_url in seen:
+                    continue
+                seen.add(item_url)
+                results.append(item)
+                added_for_query += 1
+                if added_for_query >= limit_per_query:
+                    break
+        return results
+
+
+def _parse_bing_results(html: str) -> List[Dict[str, str]]:
+    items: List[Dict[str, str]] = []
+    blocks = re.findall(r'<li[^>]+class="[^"]*\bb_algo\b[^"]*"[^>]*>(.*?)</li>', html, flags=re.DOTALL)
+    for block in blocks:
+        link = re.search(r'<h2[^>]*>.*?<a[^>]+href="([^"]+)"[^>]*>(.*?)</a>.*?</h2>', block, flags=re.DOTALL)
+        if not link:
+            continue
+        url = unescape(link.group(1))
+        title = _strip_html(link.group(2))
+        snippet_match = re.search(r'<p[^>]*>(.*?)</p>', block, flags=re.DOTALL)
+        snippet = _strip_html(snippet_match.group(1)) if snippet_match else ""
+        if title and url.startswith(("http://", "https://")):
+            items.append({"title": title, "url": url, "source": "bing", "snippet": snippet})
+    return items
+
+
+def _strip_html(value: str) -> str:
+    value = re.sub(r"<[^>]+>", " ", value)
+    return " ".join(unescape(value).split())
+
+
 def _normalize_duckduckgo_url(url: str) -> str:
     parsed = urllib.parse.urlparse(url)
     if parsed.path == "/l/":
@@ -157,4 +213,6 @@ def build_search(config: Config) -> SearchProvider:
         return JsonEndpointSearchProvider(config.search_endpoint, config.search_api_key)
     if config.search_provider == "offline":
         return OfflineSearchProvider()
-    return DuckDuckGoSearchProvider()
+    if config.search_provider == "duckduckgo":
+        return DuckDuckGoSearchProvider()
+    return BingSearchProvider()
