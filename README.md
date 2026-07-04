@@ -47,6 +47,7 @@ Copy `.env.example` and fill only what you need.
 - `TZ_LLM_PROVIDER`: `null`, `openai`, or `gemini`.
 - `OPENAI_API_KEY`, `OPENAI_MODEL`: OpenAI provider.
 - `GEMINI_API_KEY`, `GEMINI_MODEL`: Gemini provider.
+- `TZ_SEARCH_PROVIDER`: `duckduckgo` by default, `offline` for deterministic seed candidates.
 - `TZ_SEARCH_ENDPOINT`: optional JSON search endpoint accepting `q` and `limit`.
 - `TELEGRAM_BOT_TOKEN`, `TELEGRAM_USER_ID`: Telegram delivery.
 - `TZ_TELEGRAM_DRY_RUN`: keep `true` until you want real sends.

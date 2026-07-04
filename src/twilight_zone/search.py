@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+from html.parser import HTMLParser
 import json
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
-from typing import Dict, Iterable, List, Protocol
+from typing import Dict, Iterable, List, Optional, Protocol
 
 from .config import Config
 
@@ -72,7 +73,88 @@ class JsonEndpointSearchProvider:
         return results
 
 
+class _DuckDuckGoHTMLParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.results: List[Dict[str, str]] = []
+        self._current: Optional[Dict[str, str]] = None
+        self._field: Optional[str] = None
+
+    def handle_starttag(self, tag: str, attrs: List[tuple]) -> None:
+        attrs_dict = dict(attrs)
+        class_name = attrs_dict.get("class", "")
+        if tag == "a" and "result__a" in class_name:
+            href = attrs_dict.get("href", "")
+            self._current = {"title": "", "url": _normalize_duckduckgo_url(href), "source": "duckduckgo", "snippet": ""}
+            self._field = "title"
+        elif self._current is not None and tag in {"a", "div"} and "result__snippet" in class_name:
+            self._field = "snippet"
+
+    def handle_data(self, data: str) -> None:
+        if self._current is None or self._field is None:
+            return
+        text = " ".join(data.split())
+        if not text:
+            return
+        existing = self._current.get(self._field, "")
+        self._current[self._field] = f"{existing} {text}".strip()
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag == "a" and self._current is not None and self._field == "title":
+            if self._current.get("title") and self._current.get("url"):
+                self.results.append(self._current)
+            self._current = None
+            self._field = None
+        elif tag in {"a", "div"} and self._field == "snippet":
+            self._field = None
+
+
+@dataclass
+class DuckDuckGoSearchProvider:
+    def search(self, queries: Iterable[str], limit_per_query: int = 3) -> List[Dict[str, str]]:
+        results: List[Dict[str, str]] = []
+        seen = set()
+        for query in list(queries):
+            url = "https://duckduckgo.com/html/?" + urllib.parse.urlencode({"q": query})
+            request = urllib.request.Request(
+                url,
+                headers={
+                    "User-Agent": "Mozilla/5.0 TwilightZoneBot/0.1",
+                    "Accept": "text/html",
+                },
+            )
+            try:
+                with urllib.request.urlopen(request, timeout=30) as response:
+                    html = response.read().decode("utf-8", errors="replace")
+            except Exception:
+                continue
+            parser = _DuckDuckGoHTMLParser()
+            parser.feed(html)
+            added_for_query = 0
+            for item in parser.results:
+                item_url = item["url"]
+                if item_url in seen:
+                    continue
+                seen.add(item_url)
+                results.append(item)
+                added_for_query += 1
+                if added_for_query >= limit_per_query:
+                    break
+        return results
+
+
+def _normalize_duckduckgo_url(url: str) -> str:
+    parsed = urllib.parse.urlparse(url)
+    if parsed.path == "/l/":
+        query = urllib.parse.parse_qs(parsed.query)
+        if "uddg" in query and query["uddg"]:
+            return urllib.parse.unquote(query["uddg"][0])
+    return url
+
+
 def build_search(config: Config) -> SearchProvider:
     if config.search_endpoint:
         return JsonEndpointSearchProvider(config.search_endpoint, config.search_api_key)
-    return OfflineSearchProvider()
+    if config.search_provider == "offline":
+        return OfflineSearchProvider()
+    return DuckDuckGoSearchProvider()

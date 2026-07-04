@@ -6,7 +6,7 @@ from pathlib import Path
 from twilight_zone.config import Config
 from twilight_zone.db import Database, Repository, SCHEMA_VERSION
 from twilight_zone.llm import NullLLMProvider
-from twilight_zone.search import OfflineSearchProvider
+from twilight_zone.search import OfflineSearchProvider, _DuckDuckGoHTMLParser
 from twilight_zone.service import TwilightZoneService, render_message
 from twilight_zone.telegram import TelegramClient, parse_callback_reaction, parse_reaction, reaction_keyboard
 
@@ -120,6 +120,18 @@ class ConfigTests(unittest.TestCase):
     def test_config_defaults_are_offline_safe(self):
         config = Config.from_env()
         self.assertIn(config.llm_provider, {"null", "openai", "gemini"})
+
+    def test_duckduckgo_parser_extracts_result_links(self):
+        parser = _DuckDuckGoHTMLParser()
+        parser.feed(
+            """
+            <html><body>
+              <a class="result__a" href="/l/?uddg=https%3A%2F%2Fexample.com%2Fpaper">A paper</a>
+            </body></html>
+            """
+        )
+        self.assertEqual(parser.results[0]["title"], "A paper")
+        self.assertEqual(parser.results[0]["url"], "https://example.com/paper")
 
 
 if __name__ == "__main__":
