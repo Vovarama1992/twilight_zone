@@ -3,6 +3,7 @@ from __future__ import annotations
 from html.parser import HTMLParser
 import json
 import re
+import base64
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
@@ -10,6 +11,25 @@ from html import unescape
 from typing import Dict, Iterable, List, Optional, Protocol
 
 from .config import Config
+
+
+BLOCKED_DOMAINS = {
+    "dictionary.cambridge.org",
+    "www.merriam-webster.com",
+    "merriam-webster.com",
+    "smallpdf.com",
+    "www.smallpdf.com",
+    "tratu.soha.vn",
+    "communaute.orange.fr",
+}
+
+BLOCKED_TITLE_TERMS = {
+    "definition",
+    "meaning",
+    "dictionary",
+    "định nghĩa",
+    "từ điển",
+}
 
 
 class SearchProvider(Protocol):
@@ -151,7 +171,8 @@ class BingSearchProvider:
         results: List[Dict[str, str]] = []
         seen = set()
         for query in list(queries):
-            url = "https://www.bing.com/search?" + urllib.parse.urlencode({"q": query})
+            search_query = _research_query(query)
+            url = "https://www.bing.com/search?" + urllib.parse.urlencode({"q": search_query})
             request = urllib.request.Request(
                 url,
                 headers={
@@ -168,6 +189,8 @@ class BingSearchProvider:
             added_for_query = 0
             for item in _parse_bing_results(html):
                 item_url = item["url"]
+                if _is_blocked_result(item):
+                    continue
                 if item_url in seen:
                     continue
                 seen.add(item_url)
@@ -185,13 +208,42 @@ def _parse_bing_results(html: str) -> List[Dict[str, str]]:
         link = re.search(r'<h2[^>]*>.*?<a[^>]+href="([^"]+)"[^>]*>(.*?)</a>.*?</h2>', block, flags=re.DOTALL)
         if not link:
             continue
-        url = unescape(link.group(1))
+        url = _normalize_bing_url(unescape(link.group(1)))
         title = _strip_html(link.group(2))
         snippet_match = re.search(r'<p[^>]*>(.*?)</p>', block, flags=re.DOTALL)
         snippet = _strip_html(snippet_match.group(1)) if snippet_match else ""
         if title and url.startswith(("http://", "https://")):
             items.append({"title": title, "url": url, "source": "bing", "snippet": snippet})
     return items
+
+
+def _research_query(query: str) -> str:
+    negative = "-dictionary -definition -meaning -translate -translation"
+    return f"{query} research paper blog arxiv github longform {negative}"
+
+
+def _normalize_bing_url(url: str) -> str:
+    parsed = urllib.parse.urlparse(url)
+    query = urllib.parse.parse_qs(parsed.query)
+    if parsed.netloc.endswith("bing.com") and parsed.path.startswith("/ck/") and query.get("u"):
+        encoded = query["u"][0]
+        if encoded.startswith("a1"):
+            encoded = encoded[2:]
+        padded = encoded + "=" * (-len(encoded) % 4)
+        try:
+            return base64.urlsafe_b64decode(padded.encode("ascii")).decode("utf-8")
+        except Exception:
+            return url
+    return url
+
+
+def _is_blocked_result(item: Dict[str, str]) -> bool:
+    parsed = urllib.parse.urlparse(item.get("url", ""))
+    domain = parsed.netloc.lower().removeprefix("www.")
+    if domain in BLOCKED_DOMAINS:
+        return True
+    title = item.get("title", "").lower()
+    return any(term in title for term in BLOCKED_TITLE_TERMS)
 
 
 def _strip_html(value: str) -> str:
