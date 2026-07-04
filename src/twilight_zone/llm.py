@@ -20,19 +20,20 @@ class NullLLMProvider:
     def complete_json(self, system: str, user: str) -> Dict[str, Any]:
         if "strategy" in user.lower() or "queries" in user.lower():
             return {
-                "summary": "Keep the search narrow, bridge-heavy, and tolerant of sending nothing.",
+                "summary": "Искать узко, с упором на мосты между темами, и спокойно ничего не присылать, если материал слабый.",
                 "queries": [
                     "category theory software architecture LLM agents",
                     "homotopy type theory formal verification engineering",
                     "research agents personal knowledge graph unusual ideas",
                     "p-adic geometry cryptography zero knowledge bridge",
                 ],
-                "rationale": "Favor materials that connect deep math, agent architecture, and product intuition.",
+                "rationale": "Сейчас ценнее материалы, которые связывают глубокую математику, архитектуру агентов и продуктовую интуицию.",
             }
         return {
             "score": 0.72,
             "language": "en",
-            "why": "Likely useful as a bridge between the standing interest graph and current exploration mode.",
+            "why": "Похоже на полезный мост между картой интересов и текущим режимом исследования.",
+            "summary_ru": "Тестовый материал про память исследовательских агентов и персональные графы знаний.",
             "tags": ["bridge", "research", "twilight-zone"],
         }
 
@@ -104,6 +105,7 @@ def strategy_prompt(interests: List[Dict[str, Any]], day_state: Dict[str, Any]) 
     return json.dumps(
         {
             "task": "Create a search strategy for a personal research agent.",
+            "language_policy": "All user-facing prose must be in Russian. Search queries may be in English or Russian.",
             "rules": [
                 "Prefer surprising bridges over ordinary news.",
                 "Better no item than a weak item.",
@@ -113,9 +115,9 @@ def strategy_prompt(interests: List[Dict[str, Any]], day_state: Dict[str, Any]) 
             "interests": interests,
             "day_state": day_state,
             "expected_json": {
-                "summary": "short diagnosis",
+                "summary": "short diagnosis in Russian",
                 "queries": ["query 1", "query 2"],
-                "rationale": "why these searches now",
+                "rationale": "why these searches now, in Russian",
             },
         },
         ensure_ascii=False,
@@ -126,6 +128,7 @@ def evaluation_prompt(item: Dict[str, Any], interests: List[Dict[str, Any]], day
     return json.dumps(
         {
             "task": "Evaluate whether this material deserves one Telegram message.",
+            "language_policy": "Return every user-facing field in Russian. Keep only URLs and original titles unchanged.",
             "hard_filter": "Reject ordinary news, thin SEO, and generic productivity content.",
             "score_meaning": "0.0 useless, 0.68 minimum for queueing, 0.85 rare excellent.",
             "item": item,
@@ -134,7 +137,8 @@ def evaluation_prompt(item: Dict[str, Any], interests: List[Dict[str, Any]], day
             "expected_json": {
                 "score": 0.0,
                 "language": "en|ru|unknown",
-                "why": "short explanation",
+                "why": "short explanation in Russian",
+                "summary_ru": "3-6 sentence Russian explanation/translation of the material",
                 "tags": ["tag"],
             },
         },

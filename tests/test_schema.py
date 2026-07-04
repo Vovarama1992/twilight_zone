@@ -7,7 +7,7 @@ from twilight_zone.db import Database, Repository, SCHEMA_VERSION
 from twilight_zone.llm import NullLLMProvider
 from twilight_zone.search import OfflineSearchProvider
 from twilight_zone.service import TwilightZoneService
-from twilight_zone.telegram import TelegramClient, parse_reaction
+from twilight_zone.telegram import TelegramClient, parse_callback_reaction, parse_reaction, reaction_keyboard
 
 
 class SchemaTests(unittest.TestCase):
@@ -53,6 +53,21 @@ class SchemaTests(unittest.TestCase):
     def test_parse_reaction_aliases(self):
         self.assertEqual(parse_reaction("🧠 Глубже"), "go_deeper")
         self.assertEqual(parse_reaction("больше практики"), "more_practice")
+
+    def test_callback_reaction_updates_day_state(self):
+        service, _db, repo = self.make_service()
+        service.search_once()
+        delivery_id = service.queue_best_once()
+        update = {"callback_query": {"id": "callback-1", "data": f"react:{delivery_id}:more_practice"}}
+        reaction = service.handle_telegram_update(update)
+        self.assertEqual(reaction, "more_practice")
+        self.assertEqual(repo.day_state()["mode"], "practice")
+
+    def test_reaction_keyboard_uses_callback_data(self):
+        keyboard = reaction_keyboard(7)
+        first_button = keyboard["inline_keyboard"][0][0]
+        self.assertEqual(first_button["callback_data"], "react:7:more_like_this")
+        self.assertEqual(parse_callback_reaction("react:7:more_like_this")["delivery_id"], 7)
 
 
 class ConfigTests(unittest.TestCase):

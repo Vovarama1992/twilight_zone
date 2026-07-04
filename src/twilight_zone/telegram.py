@@ -20,6 +20,17 @@ REACTION_COMMANDS = {
     "⚒": "more_practice",
 }
 
+REACTION_LABELS = {
+    "more_like_this": "👍 Еще",
+    "go_deeper": "🧠 Глубже",
+    "connect_topic": "↔ Связать",
+    "miss": "👎 Мимо",
+    "new_interest": "📌 Интерес",
+    "too_heavy": "➖ Тяжело",
+    "more_twilight": "🎲 Twilight",
+    "more_practice": "⚒ Практика",
+}
+
 
 @dataclass
 class TelegramClient:
@@ -27,18 +38,37 @@ class TelegramClient:
     user_id: str
     dry_run: bool = True
 
-    def send_message(self, text: str) -> Dict[str, Any]:
+    def send_message(self, text: str, reply_markup: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         if self.dry_run or not self.token or not self.user_id:
             print("\n--- TELEGRAM DRY RUN ---")
             print(text)
+            if reply_markup:
+                print(json.dumps(reply_markup, ensure_ascii=False))
             print("--- END ---\n")
-            return {"ok": True, "dry_run": True}
+            return {"ok": True, "dry_run": True, "result": {"message_id": 0}}
 
-        payload = urllib.parse.urlencode(
-            {"chat_id": self.user_id, "text": text, "disable_web_page_preview": "false"}
-        ).encode("utf-8")
+        payload_data = {
+            "chat_id": self.user_id,
+            "text": text,
+            "disable_web_page_preview": "false",
+        }
+        if reply_markup:
+            payload_data["reply_markup"] = json.dumps(reply_markup, ensure_ascii=False)
+        payload = urllib.parse.urlencode(payload_data).encode("utf-8")
         request = urllib.request.Request(
             f"https://api.telegram.org/bot{self.token}/sendMessage",
+            data=payload,
+            method="POST",
+        )
+        with urllib.request.urlopen(request, timeout=30) as response:
+            return json.loads(response.read().decode("utf-8"))
+
+    def answer_callback_query(self, callback_query_id: str, text: str = "Принял") -> Dict[str, Any]:
+        if self.dry_run or not self.token:
+            return {"ok": True, "dry_run": True}
+        payload = urllib.parse.urlencode({"callback_query_id": callback_query_id, "text": text}).encode("utf-8")
+        request = urllib.request.Request(
+            f"https://api.telegram.org/bot{self.token}/answerCallbackQuery",
             data=payload,
             method="POST",
         )
@@ -77,3 +107,35 @@ def parse_reaction(text: str) -> Optional[str]:
     if "глуб" in lowered:
         return "go_deeper"
     return None
+
+
+def reaction_keyboard(delivery_id: int) -> Dict[str, Any]:
+    rows = [
+        ["more_like_this", "go_deeper"],
+        ["connect_topic", "miss"],
+        ["new_interest", "too_heavy"],
+        ["more_twilight", "more_practice"],
+    ]
+    return {
+        "inline_keyboard": [
+            [
+                {"text": REACTION_LABELS[reaction], "callback_data": f"react:{delivery_id}:{reaction}"}
+                for reaction in row
+            ]
+            for row in rows
+        ]
+    }
+
+
+def parse_callback_reaction(data: str) -> Optional[Dict[str, Any]]:
+    parts = data.split(":")
+    if len(parts) != 3 or parts[0] != "react":
+        return None
+    try:
+        delivery_id = int(parts[1])
+    except ValueError:
+        return None
+    reaction = parts[2]
+    if reaction not in REACTION_LABELS:
+        return None
+    return {"delivery_id": delivery_id, "reaction": reaction}

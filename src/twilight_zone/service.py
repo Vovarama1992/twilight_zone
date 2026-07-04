@@ -7,7 +7,7 @@ from .db import Database, Repository
 from .llm import LLMProvider, strategy_prompt
 from .scoring import SYSTEM_PROMPT, evaluate_material
 from .search import SearchProvider
-from .telegram import TelegramClient, parse_reaction
+from .telegram import TelegramClient, parse_callback_reaction, parse_reaction, reaction_keyboard
 
 
 class TwilightZoneService:
@@ -69,7 +69,10 @@ class TwilightZoneService:
             delivery = self.repo.next_queued_delivery()
             if not delivery:
                 return None
-        self.telegram.send_message(delivery["message"])
+        result = self.telegram.send_message(delivery["message"], reply_markup=reaction_keyboard(int(delivery["id"])))
+        message_id = (result.get("result") or {}).get("message_id")
+        if message_id is not None:
+            self.repo.set_kv(f"telegram_message:{message_id}", int(delivery["id"]))
         self.repo.mark_delivery_sent(delivery["id"])
         return int(delivery["id"])
 
@@ -83,6 +86,19 @@ class TwilightZoneService:
         return self.repo.update_day_state(energy=energy, overload=overload, mode=mode, notes=notes)
 
     def handle_telegram_update(self, update: Dict[str, Any]) -> Optional[str]:
+        callback_query = update.get("callback_query")
+        if callback_query:
+            parsed = parse_callback_reaction(callback_query.get("data", ""))
+            if not parsed:
+                return None
+            reaction = parsed["reaction"]
+            self.repo.record_reaction(parsed["delivery_id"], reaction, update)
+            self._apply_reaction_to_day_state(reaction)
+            callback_id = callback_query.get("id")
+            if callback_id:
+                self.telegram.answer_callback_query(callback_id, "Принял")
+            return reaction
+
         message = update.get("message") or update.get("edited_message") or {}
         text = message.get("text", "")
         reaction = parse_reaction(text)
@@ -120,7 +136,7 @@ class TwilightZoneService:
 def render_message(item: Dict[str, Any], evaluation: Dict[str, Any]) -> str:
     title = item["title"].strip() or "Untitled"
     why = evaluation.get("why", "Похоже на материал с хорошей связностью с твоей картой интересов.")
-    snippet = item.get("snippet", "").strip()
+    summary = evaluation.get("summary_ru") or item.get("snippet", "").strip()
     url = item["url"]
     label = _message_label(evaluation)
     parts = [
@@ -128,14 +144,12 @@ def render_message(item: Dict[str, Any], evaluation: Dict[str, Any]) -> str:
         "",
         f"Почему показать: {why}",
     ]
-    if snippet:
-        parts.append(snippet)
+    if summary:
+        parts.append(str(summary))
     parts.extend(
         [
             "",
             f"Источник: {url}",
-            "",
-            "Реакции: 👍 еще такого · 🧠 глубже · ↔ связать · 👎 мимо · 📌 новый интерес · ➖ тяжело · 🎲 Twilight Zone · ⚒ практика",
         ]
     )
     return "\n".join(parts)
