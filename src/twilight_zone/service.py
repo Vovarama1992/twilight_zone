@@ -121,7 +121,7 @@ class TwilightZoneService:
             callback_id = callback_query.get("id")
             if callback_id:
                 self.telegram.answer_callback_query(callback_id, self._callback_ack(reaction))
-            if reaction in {"more_like_this", "go_deeper"}:
+            if reaction in {"more_like_this", "go_deeper", "more_twilight"}:
                 self._send_immediate_followup(reaction)
             return reaction
 
@@ -139,7 +139,7 @@ class TwilightZoneService:
             delivery_id = self.repo.get_kv(f"telegram_message:{reply.get('message_id')}", None)
         self.repo.record_reaction(delivery_id, reaction, update)
         self._apply_reaction_to_day_state(reaction)
-        if reaction in {"more_like_this", "go_deeper"}:
+        if reaction in {"more_like_this", "go_deeper", "more_twilight"}:
             self._send_immediate_followup(reaction)
         return reaction
 
@@ -161,7 +161,10 @@ class TwilightZoneService:
         elif reaction == "more_practice":
             self.repo.update_day_state(mode="practice", overload=False)
         elif reaction == "more_twilight":
-            self.repo.update_day_state(mode="twilight")
+            self.repo.update_day_state(
+                mode="twilight",
+                notes="Пользователь сказал: направление хорошее, но нужно страннее.",
+            )
         elif reaction == "go_deeper":
             self.repo.update_day_state(mode="deep")
 
@@ -170,6 +173,11 @@ class TwilightZoneService:
             self.repo.update_day_state(mode="deep", notes="Пользователь попросил углубиться прямо сейчас.")
         elif reaction == "more_like_this":
             self.repo.update_day_state(notes="Пользователь попросил похожее продолжение прямо сейчас.")
+        elif reaction == "more_twilight":
+            self.repo.update_day_state(
+                mode="twilight",
+                notes="Пользователь попросил продолжение в том же направлении, но страннее.",
+            )
         self.search_once()
         delivered = self.deliver_once(force=True)
         if delivered is None:
@@ -182,6 +190,8 @@ class TwilightZoneService:
             return "Ищу похожее"
         if reaction == "go_deeper":
             return "Ищу глубже"
+        if reaction == "more_twilight":
+            return "Ищу страннее"
         return "Принял"
 
 
