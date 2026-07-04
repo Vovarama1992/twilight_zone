@@ -138,7 +138,7 @@ class SchemaTests(unittest.TestCase):
         self.assertEqual(reaction, "miss")
         self.assertEqual(telegram.edited_reply_markup["chat_id"], 123)
         buttons = telegram.edited_reply_markup["reply_markup"]["inline_keyboard"]
-        self.assertEqual(buttons[1][1]["text"], "✅ 👎 Мимо")
+        self.assertEqual(buttons[1][1]["text"], "✅ Учтено: Мимо")
 
     def test_reaction_keyboard_uses_callback_data(self):
         keyboard = reaction_keyboard(7)
@@ -147,7 +147,7 @@ class SchemaTests(unittest.TestCase):
         self.assertEqual(first_button["callback_data"], "react:7:more_like_this")
         self.assertEqual(twilight_button["text"], "🎲 Twilight")
         selected = reaction_keyboard(7, selected="more_twilight")
-        self.assertEqual(selected["inline_keyboard"][3][0]["text"], "✅ 🎲 Twilight")
+        self.assertEqual(selected["inline_keyboard"][3][0]["text"], "✅ Учтено: Twilight")
         self.assertEqual(parse_callback_reaction("react:7:more_like_this")["delivery_id"], 7)
 
     def test_render_message_links_http_sources(self):

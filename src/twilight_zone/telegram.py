@@ -32,6 +32,17 @@ REACTION_LABELS = {
     "more_practice": "⚒ Практика",
 }
 
+REACTION_SHORT_LABELS = {
+    "more_like_this": "Еще",
+    "go_deeper": "Глубже",
+    "connect_topic": "Связать",
+    "miss": "Мимо",
+    "new_interest": "Интерес",
+    "too_heavy": "Тяжело",
+    "more_twilight": "Twilight",
+    "more_practice": "Практика",
+}
+
 HELP_TEXT = """Как пользоваться кнопками:
 
 👍 Еще — это попало в тему. Усиль похожие материалы и попробуй прислать продолжение прямо сейчас.
@@ -183,7 +194,7 @@ def reaction_keyboard(delivery_id: int, selected: Optional[str] = None) -> Dict[
 def _reaction_button_label(reaction: str, selected: Optional[str]) -> str:
     label = REACTION_LABELS[reaction]
     if selected == reaction:
-        return f"✅ {label}"
+        return f"✅ Учтено: {REACTION_SHORT_LABELS[reaction]}"
     return label
 
 

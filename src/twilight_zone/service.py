@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
@@ -17,6 +18,9 @@ from .telegram import (
     parse_reaction,
     reaction_keyboard,
 )
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 class TwilightZoneService:
@@ -209,6 +213,7 @@ class TwilightZoneService:
                 reply_markup=reaction_keyboard(delivery_id, selected=reaction),
             )
         except Exception:
+            LOGGER.warning("failed to mark callback reaction", exc_info=True)
             return
 
 
