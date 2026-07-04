@@ -239,7 +239,9 @@ def _normalize_bing_url(url: str) -> str:
 
 def _is_blocked_result(item: Dict[str, str]) -> bool:
     parsed = urllib.parse.urlparse(item.get("url", ""))
-    domain = parsed.netloc.lower().removeprefix("www.")
+    domain = parsed.netloc.lower()
+    if domain.startswith("www."):
+        domain = domain[4:]
     if domain in BLOCKED_DOMAINS:
         return True
     title = item.get("title", "").lower()
