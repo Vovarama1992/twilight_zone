@@ -17,7 +17,7 @@ from twilight_zone.search import (
     _parse_brave_results,
     _parse_openai_web_results,
 )
-from twilight_zone.service import TwilightZoneService, render_message
+from twilight_zone.service import TwilightZoneService, followup_queries, render_message
 from twilight_zone.telegram import TelegramClient, parse_callback_reaction, parse_reaction, reaction_keyboard
 
 
@@ -42,6 +42,16 @@ class RecordingTelegramClient(TelegramClient):
         if self.fail_answer_callback:
             raise RuntimeError("answer failed")
         return {"ok": True, "dry_run": True}
+
+
+class RecordingSearchProvider:
+    def __init__(self, results=None):
+        self.queries = []
+        self.results = results or []
+
+    def search(self, queries, limit_per_query=3):
+        self.queries.append(list(queries))
+        return self.results
 
 
 class SchemaTests(unittest.TestCase):
@@ -219,6 +229,51 @@ class SchemaTests(unittest.TestCase):
             {"mode": "balanced", "overload": 0},
         )
         self.assertGreater(evaluation["score"], 0.34)
+
+    def test_more_like_this_followup_is_anchored_to_source_material(self):
+        service, _db, repo = self.make_service()
+        search = RecordingSearchProvider(
+            [
+                {
+                    "title": "Personal sleep modeling with wearable time series",
+                    "url": "https://example.com/sleep-modeling",
+                    "source": "test",
+                    "snippet": "Quantified sleep, n-of-1 modeling, and observational time series.",
+                }
+            ]
+        )
+        telegram = RecordingTelegramClient()
+        service.search = search
+        service.telegram = telegram
+        source_id = repo.add_candidate(
+            {
+                "title": "Quantified Sleep: Machine learning techniques for observational n-of-1 studies",
+                "url": "https://arxiv.org/abs/0000.0002",
+                "source": "arxiv",
+                "snippet": "Sleep quality, quantified self, n-of-1 observational study.",
+            },
+            {"score": 0.9, "why": "Ок", "summary_ru": "Ок", "tags": ["sleep"]},
+        )
+        delivery_id = repo.queue_delivery(source_id, "sleep message")
+        reaction = service.handle_telegram_update(
+            {"callback_query": {"id": "callback-1", "data": f"react:{delivery_id}:more_like_this"}}
+        )
+        self.assertEqual(reaction, "more_like_this")
+        joined_queries = " ".join(search.queries[0]).lower()
+        self.assertIn("sleep", joined_queries)
+        self.assertIn("quantified", joined_queries)
+
+    def test_followup_queries_preserve_source_topic(self):
+        queries = followup_queries(
+            "more_like_this",
+            {
+                "title": "Quantified Sleep: Machine learning techniques for observational n-of-1 studies",
+                "snippet": "Sleep quality and quantified-self time series.",
+            },
+        )
+        joined = " ".join(queries).lower()
+        self.assertIn("sleep", joined)
+        self.assertIn("similar research", joined)
 
 
 class ConfigTests(unittest.TestCase):

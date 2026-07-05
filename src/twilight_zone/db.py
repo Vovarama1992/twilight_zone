@@ -274,6 +274,47 @@ class Repository:
             ).fetchone()
             return dict(row) if row else None
 
+    def best_candidate_from_ids(
+        self,
+        material_ids: Iterable[int],
+        min_score: float = 0.68,
+        exclude_id: Optional[int] = None,
+    ) -> Optional[Dict[str, Any]]:
+        ids = [int(material_id) for material_id in material_ids]
+        if not ids:
+            return None
+        placeholders = ",".join("?" for _ in ids)
+        params: List[Any] = [*ids, min_score]
+        exclude_clause = ""
+        if exclude_id is not None:
+            exclude_clause = "AND id != ?"
+            params.append(int(exclude_id))
+        with self.db.connect() as conn:
+            row = conn.execute(
+                f"""
+                SELECT * FROM candidate_materials
+                WHERE id IN ({placeholders}) AND score >= ? {exclude_clause}
+                ORDER BY score DESC, discovered_at DESC
+                LIMIT 1
+                """,
+                params,
+            ).fetchone()
+            return dict(row) if row else None
+
+    def material_for_delivery(self, delivery_id: int) -> Optional[Dict[str, Any]]:
+        with self.db.connect() as conn:
+            row = conn.execute(
+                """
+                SELECT candidate_materials.*
+                FROM deliveries
+                JOIN candidate_materials ON candidate_materials.id = deliveries.material_id
+                WHERE deliveries.id = ?
+                LIMIT 1
+                """,
+                (delivery_id,),
+            ).fetchone()
+            return dict(row) if row else None
+
     def mark_candidate(self, material_id: int, status: str) -> None:
         with self.db.connect() as conn:
             conn.execute(
@@ -294,6 +335,11 @@ class Repository:
             row = conn.execute(
                 "SELECT * FROM deliveries WHERE status = 'queued' ORDER BY created_at LIMIT 1"
             ).fetchone()
+            return dict(row) if row else None
+
+    def delivery_by_id(self, delivery_id: int) -> Optional[Dict[str, Any]]:
+        with self.db.connect() as conn:
+            row = conn.execute("SELECT * FROM deliveries WHERE id = ?", (delivery_id,)).fetchone()
             return dict(row) if row else None
 
     def mark_delivery_sent(self, delivery_id: int) -> None:

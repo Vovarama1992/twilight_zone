@@ -84,16 +84,20 @@ class TwilightZoneService:
             delivery = self.repo.next_queued_delivery()
             if not delivery:
                 return None
+        return self._send_delivery(delivery)
+
+    def _send_delivery(self, delivery: Dict[str, Any]) -> int:
+        delivery_id = int(delivery["id"])
         result = self.telegram.send_message(
             delivery["message"],
-            reply_markup=reaction_keyboard(int(delivery["id"])),
+            reply_markup=reaction_keyboard(delivery_id),
             parse_mode="HTML",
         )
         message_id = (result.get("result") or {}).get("message_id")
         if message_id is not None:
-            self.repo.set_kv(f"telegram_message:{message_id}", int(delivery["id"]))
-        self.repo.mark_delivery_sent(delivery["id"])
-        return int(delivery["id"])
+            self.repo.set_kv(f"telegram_message:{message_id}", delivery_id)
+        self.repo.mark_delivery_sent(delivery_id)
+        return delivery_id
 
     def _delivery_allowed(self) -> bool:
         last_sent = _parse_sqlite_timestamp(self.repo.latest_sent_delivery_at())
@@ -127,7 +131,7 @@ class TwilightZoneService:
             if callback_id:
                 self._answer_callback(callback_id, reaction)
             if reaction in {"more_like_this", "go_deeper", "more_twilight"}:
-                self._send_immediate_followup(reaction)
+                self._send_immediate_followup(reaction, parsed["delivery_id"])
             return reaction
 
         message = update.get("message") or update.get("edited_message") or {}
@@ -145,7 +149,7 @@ class TwilightZoneService:
         self.repo.record_reaction(delivery_id, reaction, update)
         self._apply_reaction_to_day_state(reaction)
         if reaction in {"more_like_this", "go_deeper", "more_twilight"}:
-            self._send_immediate_followup(reaction)
+            self._send_immediate_followup(reaction, delivery_id)
         return reaction
 
     def poll_telegram_once(self) -> int:
@@ -188,22 +192,49 @@ class TwilightZoneService:
         elif reaction == "go_deeper":
             self.repo.update_day_state(mode="deep")
 
-    def _send_immediate_followup(self, reaction: str) -> None:
+    def _send_immediate_followup(self, reaction: str, delivery_id: Optional[int] = None) -> None:
+        source_item = self.repo.material_for_delivery(int(delivery_id)) if delivery_id else None
         if reaction == "go_deeper":
             self.repo.update_day_state(mode="deep", notes="Пользователь попросил углубиться прямо сейчас.")
         elif reaction == "more_like_this":
-            self.repo.update_day_state(notes="Пользователь попросил похожее продолжение прямо сейчас.")
+            self.repo.update_day_state(
+                notes="Пользователь попросил похожее продолжение именно к последнему материалу, не просто еще один хороший общий пост."
+            )
         elif reaction == "more_twilight":
             self.repo.update_day_state(
                 mode="twilight",
                 notes="Пользователь попросил продолжение в том же направлении, но страннее.",
             )
-        self.search_once()
-        delivered = self.deliver_once(force=True)
+        if source_item:
+            delivered = self._deliver_followup_for_source(reaction, source_item)
+        else:
+            self.search_once()
+            delivered = self.deliver_once(force=True)
         if delivered is None:
             self.telegram.send_message(
                 "Принял сигнал. Прямо сейчас сильного продолжения не нашел; лучше ничего, чем слабая догонялка."
             )
+
+    def _deliver_followup_for_source(self, reaction: str, source_item: Dict[str, Any]) -> Optional[int]:
+        queries = followup_queries(reaction, source_item)
+        items = self.search.search(queries, limit_per_query=3)
+        interests = self.repo.interests_snapshot()
+        day_state = self.repo.day_state()
+        saved: List[int] = []
+        for item in items:
+            evaluation = evaluate_material(self.llm, item, interests, day_state)
+            saved.append(self.repo.add_candidate(item, evaluation))
+        best = self.repo.best_candidate_from_ids(saved, exclude_id=int(source_item["id"]))
+        if not best:
+            return None
+        evaluation = json.loads(best["evaluation_json"])
+        message = render_message(best, evaluation)
+        delivery_id = self.repo.queue_delivery(best["id"], message)
+        self.repo.mark_candidate(best["id"], "queued")
+        delivery = self.repo.delivery_by_id(delivery_id)
+        if not delivery:
+            return None
+        return self._send_delivery(delivery)
 
     def _callback_ack(self, reaction: str) -> str:
         if reaction == "more_like_this":
@@ -258,6 +289,36 @@ def render_message(item: Dict[str, Any], evaluation: Dict[str, Any]) -> str:
         ]
     )
     return "\n".join(parts)
+
+
+def followup_queries(reaction: str, source_item: Dict[str, Any]) -> List[str]:
+    title = _query_text(source_item.get("title", ""), max_chars=120)
+    snippet = _query_text(source_item.get("snippet", ""), max_chars=220)
+    base = f"{title} {snippet}".strip()
+    if not base:
+        return []
+    if reaction == "go_deeper":
+        return [
+            f"{base} technical follow-up related work",
+            f"{title} deeper methods limitations source code",
+        ]
+    if reaction == "more_twilight":
+        return [
+            f"{base} unusual adjacent ideas research blog",
+            f"{title} strange implications adjacent fields",
+        ]
+    return [
+        f"{base} similar research related work",
+        f"{title} related paper blog github",
+    ]
+
+
+def _query_text(value: object, max_chars: int) -> str:
+    text = " ".join(str(value or "").split())
+    text = text.replace('"', " ")
+    if len(text) <= max_chars:
+        return text
+    return text[: max_chars - 1].rstrip()
 
 
 def _render_source(url: str) -> str:
