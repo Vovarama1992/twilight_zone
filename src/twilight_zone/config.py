@@ -39,6 +39,7 @@ class Config:
     llm_provider: str
     openai_api_key: str
     openai_model: str
+    openai_web_search_model: str
     gemini_api_key: str
     gemini_model: str
     search_endpoint: str
@@ -62,6 +63,7 @@ class Config:
             llm_provider=os.getenv("TZ_LLM_PROVIDER", "null").strip().lower(),
             openai_api_key=os.getenv("OPENAI_API_KEY", ""),
             openai_model=os.getenv("OPENAI_MODEL", "gpt-4.1-mini"),
+            openai_web_search_model=os.getenv("OPENAI_WEB_SEARCH_MODEL", os.getenv("OPENAI_MODEL", "gpt-4.1-mini")),
             gemini_api_key=os.getenv("GEMINI_API_KEY", ""),
             gemini_model=os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
             search_endpoint=os.getenv("TZ_SEARCH_ENDPOINT", ""),

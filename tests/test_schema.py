@@ -15,6 +15,7 @@ from twilight_zone.search import (
     _parse_arxiv_results,
     _parse_bing_results,
     _parse_brave_results,
+    _parse_openai_web_results,
 )
 from twilight_zone.service import TwilightZoneService, render_message
 from twilight_zone.telegram import TelegramClient, parse_callback_reaction, parse_reaction, reaction_keyboard
@@ -288,6 +289,26 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(results[0]["url"], "https://example.com/agent-memory")
         self.assertEqual(results[0]["source"], "brave")
         self.assertEqual(results[0]["snippet"], "A useful research note.")
+
+    def test_openai_web_parser_extracts_json_results_from_response_text(self):
+        results = _parse_openai_web_results(
+            {
+                "output": [
+                    {
+                        "type": "message",
+                        "content": [
+                            {
+                                "type": "output_text",
+                                "text": '{"results":[{"title":"Agent memory","url":"https://example.com/memory","snippet":"Research note."}]}',
+                            }
+                        ],
+                    }
+                ]
+            }
+        )
+        self.assertEqual(results[0]["title"], "Agent memory")
+        self.assertEqual(results[0]["url"], "https://example.com/memory")
+        self.assertEqual(results[0]["source"], "openai-web")
 
 
 if __name__ == "__main__":

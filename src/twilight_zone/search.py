@@ -9,7 +9,7 @@ import urllib.request
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from html import unescape
-from typing import Dict, Iterable, List, Optional, Protocol
+from typing import Any, Dict, Iterable, List, Optional, Protocol
 
 from .config import Config
 
@@ -115,6 +115,133 @@ class JsonEndpointSearchProvider:
                         }
                     )
         return results
+
+
+@dataclass
+class OpenAIWebSearchProvider:
+    api_key: str
+    model: str
+
+    def search(self, queries: Iterable[str], limit_per_query: int = 3) -> List[Dict[str, str]]:
+        results: List[Dict[str, str]] = []
+        seen = set()
+        for query in list(queries):
+            payload = {
+                "model": self.model,
+                "tools": [{"type": "web_search", "search_context_size": "medium"}],
+                "tool_choice": "required",
+                "input": _openai_web_search_prompt(_research_query(query), limit_per_query),
+            }
+            request = urllib.request.Request(
+                "https://api.openai.com/v1/responses",
+                data=json.dumps(payload).encode("utf-8"),
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json",
+                },
+                method="POST",
+            )
+            try:
+                with urllib.request.urlopen(request, timeout=60) as response:
+                    data = json.loads(response.read().decode("utf-8"))
+            except Exception:
+                continue
+            added_for_query = 0
+            for item in _parse_openai_web_results(data):
+                item_url = item["url"]
+                if _is_blocked_result(item):
+                    continue
+                if item_url in seen:
+                    continue
+                seen.add(item_url)
+                results.append(item)
+                added_for_query += 1
+                if added_for_query >= limit_per_query:
+                    break
+        return results
+
+
+def _openai_web_search_prompt(query: str, limit_per_query: int) -> str:
+    limit = max(1, min(limit_per_query, 5))
+    return (
+        "Search the live web for durable, high-signal research materials for a personal research scout.\n"
+        f"Query: {query}\n"
+        "Prefer primary sources, research blogs, lab pages, GitHub repositories, arXiv papers, and longform technical essays.\n"
+        "Avoid dictionaries, generic news, SEO pages, explainers for beginners, course landing pages, and shallow summaries.\n"
+        f"Return exactly JSON, no markdown: {{\"results\":[up to {limit} objects]}}.\n"
+        "Each object must have string fields: title, url, snippet. Use direct canonical URLs."
+    )
+
+
+def _parse_openai_web_results(data: Dict[str, Any]) -> List[Dict[str, str]]:
+    text = _extract_openai_response_text(data)
+    items = _parse_results_json(text)
+    if items:
+        return items
+    return _parse_openai_sources(data)
+
+
+def _extract_openai_response_text(data: Dict[str, Any]) -> str:
+    output_text = data.get("output_text")
+    if isinstance(output_text, str):
+        return output_text
+    parts: List[str] = []
+    for item in data.get("output", []) or []:
+        if not isinstance(item, dict):
+            continue
+        for content in item.get("content", []) or []:
+            if not isinstance(content, dict):
+                continue
+            text = content.get("text")
+            if isinstance(text, str):
+                parts.append(text)
+    return "\n".join(parts)
+
+
+def _parse_results_json(text: str) -> List[Dict[str, str]]:
+    if not text.strip():
+        return []
+    cleaned = text.strip()
+    if cleaned.startswith("```"):
+        cleaned = cleaned.strip("`").strip()
+        if cleaned.lower().startswith("json"):
+            cleaned = cleaned[4:].strip()
+    match = re.search(r"\{.*\}", cleaned, flags=re.DOTALL)
+    if match:
+        cleaned = match.group(0)
+    try:
+        data = json.loads(cleaned)
+    except json.JSONDecodeError:
+        return []
+    raw_results = data.get("results", [])
+    if not isinstance(raw_results, list):
+        return []
+    items: List[Dict[str, str]] = []
+    for raw in raw_results:
+        if not isinstance(raw, dict):
+            continue
+        url = str(raw.get("url") or "")
+        title = _strip_html(str(raw.get("title") or ""))
+        snippet = _strip_html(str(raw.get("snippet") or raw.get("description") or ""))
+        if title and url.startswith(("http://", "https://")):
+            items.append({"title": title, "url": url, "source": "openai-web", "snippet": snippet})
+    return items
+
+
+def _parse_openai_sources(data: Dict[str, Any]) -> List[Dict[str, str]]:
+    raw_sources = data.get("sources", [])
+    if not isinstance(raw_sources, list):
+        return []
+    items: List[Dict[str, str]] = []
+    for raw in raw_sources:
+        if not isinstance(raw, dict):
+            continue
+        url = str(raw.get("url") or raw.get("uri") or "")
+        title = _strip_html(str(raw.get("title") or url))
+        snippet = _strip_html(str(raw.get("snippet") or raw.get("description") or ""))
+        if title and url.startswith(("http://", "https://")):
+            items.append({"title": title, "url": url, "source": "openai-web", "snippet": snippet})
+    return items
 
 
 class _DuckDuckGoHTMLParser(HTMLParser):
@@ -411,6 +538,10 @@ def _normalize_duckduckgo_url(url: str) -> str:
 def build_search(config: Config) -> SearchProvider:
     if config.search_endpoint:
         return JsonEndpointSearchProvider(config.search_endpoint, config.search_api_key)
+    if config.search_provider == "openai_web" and config.openai_api_key:
+        return OpenAIWebSearchProvider(config.openai_api_key, config.openai_web_search_model)
+    if config.search_provider == "openai_web":
+        return ArxivSearchProvider()
     if config.search_provider == "brave" and config.brave_search_api_key:
         return BraveSearchProvider(config.brave_search_api_key)
     if config.search_provider == "brave":
