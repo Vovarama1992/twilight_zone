@@ -166,7 +166,8 @@ def _openai_web_search_prompt(query: str, limit_per_query: int) -> str:
     return (
         "Search the live web for durable, high-signal research materials for a personal research scout.\n"
         f"Query: {query}\n"
-        "Prefer primary sources, research blogs, lab pages, GitHub repositories, arXiv papers, and longform technical essays.\n"
+        "Prefer research blogs, lab pages, GitHub repositories, project pages, longform technical essays, and primary sources.\n"
+        "Do not over-focus on arXiv. Include arXiv only when it is clearly the strongest source or has unusual bridge value.\n"
         "Avoid dictionaries, generic news, SEO pages, explainers for beginners, course landing pages, and shallow summaries.\n"
         f"Return exactly JSON, no markdown: {{\"results\":[up to {limit} objects]}}.\n"
         "Each object must have string fields: title, url, snippet. Use direct canonical URLs."
